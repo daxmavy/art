@@ -11,3 +11,6 @@ wheels/
 
 # Data from experiments
 simulations/data
+
+# profiling
+*.prof
