@@ -71,7 +71,7 @@ fixed_all  <- data.frame()
 # random_all <- data.frame()
 
 for (i in 0:(N - 1)) {
-  input_file <- file.path(input_dir, sprintf("%d.csv", i))
+  input_file <- file.path(input_dir, sprintf("%d/counts.csv", i))
 
   if (!file.exists(input_file)) {
     warning(sprintf("Missing input file: %s (skipping)", input_file), call. = FALSE)
