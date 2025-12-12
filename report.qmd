@@ -1,0 +1,251 @@
+---
+title: "Report on sample size"
+bibliography: references.bib
+format:
+  html:
+    toc: true
+    theme: darkly
+    # pdf
+jupyter: python3
+---
+
+```{python}
+from matplotlib import pyplot as plt
+import pandas as pd
+import numpy as np
+```
+
+## Models
+
+Note that we will perform all of the below for both experts and non-experts separately (but using the same images) to estimate
+
+### RQ 1: Can AI mimic the styles of artists?
+
+This model uses AI-real comparisons, and simply bundles all AI models together for analysis.
+
+$$
+    \mathbb{P}(A > B) = \operatorname{sigmoid}\bigg( \beta_{AI} \cdot ( x^{\text{is\_AI}}_A - x^{\text{is\_AI}}_B )\bigg).
+$$ {#eq-ai-basic} This model has 1 parameter to estimate.
+
+We can also split out by image generation model, to see whether some AI models are more or less effective: $$
+    \mathbb{P}(A > B) = \operatorname{sigmoid}\bigg(\beta \cdot (x_A^{\text{models}} - x_B^{\text{models}})\bigg)
+$$ {#eq-model-basic} This has $M$ parameters to estimate, where $M$ is the number of models. Note that this is taking into account dropping out the coefficient term for human-generated art.
+
+We can also split out by artist, to see how AI performance varies across artists:
+
+$$
+    \mathbb{P}(A > B) = \operatorname{sigmoid}\bigg(\beta \cdot (x_A^{\text{is\_AI, artists}} - x_B^{\text{is\_AI, artists}})\bigg)
+$$ {#eq-ai-artist} This groups together all AI models, and compares their performance against human models for each artist. Since one artist is dropped, this model has $A-1$ parameters to estimate (where $A$ is the number of artists).
+
+Finally, we can split by both artist and model to estimate how AI performance varies across both artists and models:
+
+$$
+    \mathbb{P}(A > B) = \operatorname{sigmoid}\bigg(\beta \cdot (x_A^{\text{models, artists}} - x_B^{\text{models, artists}})\bigg)
+$$ {#eq-model-artist}
+
+This has $(A-1) \cdot M$ parameters to estimate.
+
+### RQ 2: How does anachronistic subject matter influence model mimicry capability?
+
+This uses AI-AI comparisons. Our primary analysis measures how AI models' relative performance varies with anachronistic subject matter. We have already performed the following analysis for RQ 1:
+
+$$
+    \mathbb{P}(A > B) = \operatorname{sigmoid}\bigg(\beta \cdot (x_A^{\text{models}} - x_B^{\text{models}})\bigg)
+$$ {#eq-anac-basic} Because no human-generated art is being included, we adjust this slightly, estimating $m-1$ parameters. This means that coefficients are with reference to one model. The choice is arbitrary; we can go with the best-performing model, for example.
+
+We do this analysi across 3 different types of subject matter: in-sample subject matter (e.g., apples for Cezanne), out-of-sample subject matter (Eiffel tower for Cezanne), and anachronistic subject matter (laptop for Cezanne). This yields $3 \cdot (M-1)$ parameters, which may be compared to analyse how relative model performance varies across types of subject matter.
+
+### RQ 3: What aspects of style is AI better or worse at mimicing?
+
+All of the models so far have been straightforward from the literature. For RQ3, however, we need to extend the standard models a little.
+
+Consider the following: $$
+\mathbb{P}(A > B) = \text{sigmoid}(\lambda_A - \lambda_B) 
+$$ {#eq-bradley-terry} $\lambda_A$ is the 'overall characteristicness' of image $A$. This is the Bradley-Terry model for pairwise comparison. Assuming that $\lambda_A = \beta \cdot x + \epsilon$ yields the models used in RQ1 and RQ2.
+
+However, we break it down further for RQ3, assuming that $\lambda_A$ is the result of an unobserved linear combination of $S$ style aspects $\lambda_A^i$ for $i = 1, ... , S$, weighted by 'style aspect weighting vector' $\gamma$: $$
+\lambda_A = \sum_{i=1}^S \gamma^i \cdot \lambda^i_A
+$$ {#eq-aspect-weighting} Further, we assume that: $$
+\lambda_A^i = \theta^i \cdot x_A + \epsilon, 
+$$ {#eq-aspect-regression} where $x_A$ are some properties of image $A$, and $\theta^i$ are regression coefficients.
+
+In plain English, the characteristicness of image $A$ for a certain aspect of style $i$ is determined by *something* along with random noise, which captures individual variation.
+
+Survey participants choose a top reason out of $S$ reasons for why they preferred image $A$ over image $B$. We assume that the probability that they choose reason $r_i$ is proportional to $\gamma^i \cdot (\lambda_A^i - \lambda_B^i)$. In plain English, it depends on a) how much the respondent cares about style aspect $i$, as well as b) the actual perceived difference between the two images along style aspect $i$. This yields the following model,
+
+$$
+\mathbb{P}(r_i \mid A > B) = \frac{\exp(\gamma^i \cdot (\lambda_A^i - \lambda_B^i))}{\sum_{j=1}^S \exp(\gamma^j \cdot (\lambda_A^j - \lambda_B^j))}.
+$$
+
+Now, we plug in (@eq-aspect-regression) to give:
+
+$$
+\mathbb{P}(r_i \mid A > B) = \frac{\exp(\gamma^i \cdot \theta^i \cdot (x_A - x_B))}{\sum_{j=1}^S \exp(\gamma^j \cdot \theta^j \cdot (x_A - x_B))}.
+$$
+
+We would like to estimate $\gamma$ and $\theta$. However, note from this model that they cannot be disentangled. For example, for any given values of $\theta and \gamma$ that we estimate, $\varepsilon \cdot \theta and \frac{1}{\varepsilon} \gamma$ provide an identical estimate. To eliminate this over-parameterisation, we set $\beta = \gamma \cdot \theta$, giving the following model:
+
+$$
+\mathbb{P}(r_i \mid A > B) = \frac{\exp(\beta^i \cdot (x_A - x_B))}{\sum_{j=1}^S \exp(\beta^j \cdot (x_A - x_B))}.
+$$
+
+This is a standard multinomial regression. For RQ3, we consider two models. Firstly, we group all AI models together: $$
+\mathbb{P}(r_i \mid A > B) = \frac{\exp(\beta^i \cdot (x_A^{\text{is\_AI}} - x_B^{\text{is\_AI}}))}{\sum_{j=1}^S \exp(\beta^j \cdot (x_A^{\text{is\_AI}} - x_B^{\text{is\_AI}}))}.
+$$ {#eq-ai-multi} This requires estimating $S$ parameters via standard multinomial regression.
+
+For the second model, we try to estimate how different AI models' performance varies across different aspects. This gives the following model:
+
+$$
+\mathbb{P}(r_i \mid A > B) = \frac{\exp(\beta^i \cdot (x_A^{\text{models}} - x_B^{\text{models}}))}{\sum_{j=1}^S \exp(\beta^j \cdot (x_A^{\text{models}} - x_B^{\text{models}}))}
+$$ {#eq-model-multi} Again, we drop the term for human-generated images, so that each coefficient term measures the relative performance to human-generated images. This yields $S \cdot M$ parameters to estimate.
+
+### Summary of models
+
+| Research question | Model name | Equation | \# of parameters |
+|------------------|-------------------|------------------|------------------|
+| 1 | AI mimicry skill | @eq-ai-basic | 1 |
+| 1 | Model mimicry skill | @eq-model-basic | $M$ |
+| 1 | AI mimicry skill across artists | @eq-ai-artist | $A-1$ |
+| 1 | Model mimicry skill across artists | @eq-model-artist | $M \cdot (A-1)$ |
+| 2 | Model mimicry skill across anachronistic content | @eq-anac-basic | $3 \cdot (M-1)$ |
+| 3 | Reason for preference, AI vs human | @eq-ai-multi | $S$ |
+| 3 | Reason for preference, model comparison | @eq-model-multi | $S \cdot M$ |
+| 3 | Reason for preference, AI vs human across artists |  | $S \cdot (A-1)$ |
+
+## Rule of thumb analysis
+
+There is existing literature for rules of thumb for how many participants are needed for discrete choice analyses. I draw on @assele2023 in particular, which gives the following equation (assuming 5% significance level and 90% desired statistical power),
+
+$$
+N \geq 150 \cdot \frac{K}{S}, \text{ equivalently } N\cdot S \geq 150 \cdot K
+$$
+
+where $N$ is the number of participants, $K$ is the number of parameters that must be estimated, and $S$ is the number of choice tasks performed by each participant.
+
+Applying this to our table of analyses above, consider first RQ1.
+
+| Model name | Equation | \# of parameters | Required \# of choices |   |
+|---------------|---------------|---------------|---------------|---------------|
+| AI mimicry skill | @eq-ai-basic | 1 | $150$ |  |
+| Model mimicry skill | @eq-model-basic | $M$ | $150M$ |  |
+| AI mimicry skill across artists | @eq-ai-artist | $A-1$ | $150 (A-1)$ |  |
+| Model mimicry skill across artists | @eq-model-artist | $M \cdot (A-1)$ | $150M(A-1)$ |  |
+
+Each of the first 3 should be doable, respectively requiring 150, 450, and 450 choices if we assume 3 models and 4 artists being investigated. If we assume that each expert makes 24 choices, then we need 19 experts.
+
+The most demanding case is the last one, and if we assume that we investigate 3 models and 4 artists, then we require $150 \cdot 3 \cdot 3 = 1350$ choices. Even assuming 30 choices per expert, this is 45 experts, which is beyond our 'safe bet' of 40. So maybe doable.
+
+Considering RQ2, we have $3 \cdot (M-1)$ parameters, and therefore, assuming 3 models being tested, 900 choices required. If we have 30 choices per expert, this requires 30 experts. Note that there is **no overlap** with the RQ1 data, and so this would amount to 60 questions per expert - likely too many.
+
+These are the studies for RQ3:
+
+| Model name | Equation | \\# of parameters | Required \# of choices |
+|-------------------|------------------|------------------|------------------|
+| Reason for preference, AI vs human | @eq-ai-multi | $S$ | $150 \cdot S$ |
+| Reason for preference, model comparison | @eq-model-multi | $S \cdot M$ | $150 \cdot S \cdot M$ |
+
+Each of these can re-use data from RQ1, so long as users fill out the reason for each preference. If $S=6$, then the required \# of choices for the basic model is 900. Assuming 24 choices per expert, this requires 38 experts, which is realistic.
+
+On the other hand, the second model, assuming $M=3$, requires 2700 choices. This seems quite unfeasible, requiring 90 experts to answer 30 questions each, for example.
+
+## Choice set design
+
+Let's assume the following:
+
+-   Only consider RQs 1 and 3 for now
+
+-   each user will do 24 choices at most
+
+-   4 blocks of artists, so 6 questions per artist
+
+-   3 AI models (so 2 per artist-AI combination)
+
+-   2 subjects per artist.
+
+This gives a nice set of 4 blocks (1 per artist). Each block has a factorial structure of 6 questions across 2 subject types and 3 AI models. Every user sees the same choice set.
+
+```{python}
+from src import simulate as sim
+
+res = sim.generate_data_for_simulation()
+
+print(res.keys())
+
+res['outcomes']
+```
+
+## Calibration of settings
+
+Let's look at the participants in our simulation:
+
+```{python}
+res['participants'].head()
+```
+
+Note the 'skill' parameter, which should have a mean of roughly 5:
+
+```{python}
+res['participants']['skill'].hist(zorder=1)
+plt.axvline(res['participants']['skill'].mean(), color = 'red', zorder=10)
+plt.show()
+```
+
+Why did I set this? Similar to when building the analytical models, the 'skill' of participants and the scale of images' 'characteristicness' are coupled together. I want the characteristicness to roughly sit between 0 and 1 so I can model it with a beta distribution in the simulation. Hence, I choose a mean value for skill which produces sensible results when the difference in characteristicness between two images can range, at the extremes, between 0 and 1.
+
+The following shows how difference between the characteristicness of two images relates to the probability of choosing each image, for differing participant skills.
+
+```{python}
+# | code-fold: true
+from matplotlib import ticker
+
+for skill in (1,5,10):
+    x = np.arange(-1, 1, 0.01)
+    y = 1 - sim.score_diff_to_probability(skill * x) 
+    plt.plot(x, y, label = f'Skill = {skill}')
+
+plt.ylim((0,1))
+plt.xlabel('Characteristicness difference')
+plt.ylabel('Probability of higher score item being chosen')
+plt.legend()
+plt.gca().yaxis.set_major_formatter(ticker.PercentFormatter(1.0))
+plt.title('Relation between $\\lambda_A - \\lambda_B$ and $P(A>B)$')
+plt.tight_layout()
+```
+
+You can see that the skill of 5 gives a reasonable range, where a difference of 1 will basically guarantee that the better image is chosen. So we just fix the mean of users' skill to 5, and allow variance around that to model varying user skill.
+
+But when choosing scenarios to investigate, we still need to know the consequence of differences in score. Assuming user skill of 5 (we won't vary this mean in analyses), the following characteristicness differences have the following effects:
+
+```{python}
+probs_of_interest = [0.99, 0.9, 0.75, 0.66, 0.55]
+x = np.arange(0, 1, 0.01)
+y = 1 - sim.score_diff_to_probability(5 * x)
+for p in probs_of_interest:
+    idx = (np.abs(y - p)).argmin()
+    print(p, x[idx])
+```
+
+## Notes from last meeting
+
+Notes
+
+-   similarity & difference with DCE
+
+-   design of choice sets
+
+-   rule of thumb for statistical power
+
+-   model specifications for RQs
+
+-   existing paper that you found
+
+confidence rating a) per-choice b) per-reason choice?
+
+1.  literature
+2.  simulation
+
+note on aspects:
+
+-   consolidate to smaller number? R to discuss with T
+
+look at psychophysics of style paper in Zotero
